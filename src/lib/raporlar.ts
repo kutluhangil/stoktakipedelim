@@ -84,7 +84,8 @@ export async function vadeRaporu(bugun: Date = new Date()) {
 export async function girisCikisRaporu(aralik: RaporAraligi) {
   const [girisler, satislar] = await Promise.all([
     prisma.stokKalemi.aggregate({
-      where: tarihKosulu("girisTarihi", aralik),
+      // İptal edilmiş kayıt hiç girilmemiş sayılır, giriş adedine katılmaz.
+      where: { durum: { not: STOK_DURUM.IPTAL }, ...tarihKosulu("girisTarihi", aralik) },
       _count: { _all: true },
       _sum: { alisFiyatiKurus: true },
     }),
@@ -228,7 +229,7 @@ export async function aylikHareketRaporu(aySayisi = 12) {
 
   const [girisler, satislar] = await Promise.all([
     prisma.stokKalemi.findMany({
-      where: { girisTarihi: { gte: baslangic } },
+      where: { durum: { not: STOK_DURUM.IPTAL }, girisTarihi: { gte: baslangic } },
       select: { girisTarihi: true },
     }),
     prisma.stokKalemi.findMany({

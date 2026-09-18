@@ -19,6 +19,12 @@ export const STOK_DURUM = {
   SATILDI: "SATILDI",
   IADE: "IADE",
   ARIZALI: "ARIZALI",
+  /**
+   * Yanlış girilmiş kayıt. Kalıcı silme yerine bu duruma alınır:
+   * listelerden, stok değerinden ve raporlardan düşer ama kaydın kendisi ve
+   * hareket tarihçesi durur, yönetici geri alabilir.
+   */
+  IPTAL: "IPTAL",
 } as const;
 export type StokDurum = (typeof STOK_DURUM)[keyof typeof STOK_DURUM];
 
@@ -28,6 +34,7 @@ export const STOK_DURUM_ETIKET: Record<StokDurum, string> = {
   SATILDI: "Satıldı",
   IADE: "İade",
   ARIZALI: "Arızalı",
+  IPTAL: "İptal",
 };
 
 export const TRANSFER_DURUM = {

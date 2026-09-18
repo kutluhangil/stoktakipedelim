@@ -9,6 +9,7 @@ import {
   HAREKET_TIP,
   HAREKET_TIP_ETIKET,
   ODEME_TIPI_ETIKET,
+  STOK_DURUM,
   VADE_ETIKET,
   type HareketTip,
   type OdemeTipi,
@@ -16,8 +17,9 @@ import {
 import { beklemeGunu, karKurus } from "@/lib/sutunlar";
 import { tarihSaatYaz, tarihYaz } from "@/lib/tarih";
 import { vadeDurumu } from "@/lib/vade";
-import { oturumGerekli } from "@/lib/yetki";
+import { adminMi, oturumGerekli } from "@/lib/yetki";
 import { CIHAZ_ICERIK } from "@/lib/cihazFiltre";
+import { YonetimDugmeleri } from "./YonetimDugmeleri";
 
 export const metadata = { title: "Cihaz Detayı — Stok Takip" };
 
@@ -42,7 +44,7 @@ const HAREKET_NOKTASI: Record<HareketTip, string> = {
 };
 
 export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar/[id]">) {
-  await oturumGerekli();
+  const oturum = await oturumGerekli();
   const { id } = await params;
   const cihazId = Number(id);
   if (!Number.isInteger(cihazId)) notFound();
@@ -90,12 +92,23 @@ export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar
             {cihaz.magaza.ad}
           </p>
         </div>
-        <Link
-          href="/cihazlar"
-          className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-        >
-          ← Cihazlar
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Kayıt düzeltme ve iptal yalnızca yöneticide. */}
+          {adminMi(oturum) && cihaz.durum !== STOK_DURUM.IPTAL ? (
+            <Link
+              href={`/cihazlar/${cihaz.id}/duzenle`}
+              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Düzenle
+            </Link>
+          ) : null}
+          <Link
+            href="/cihazlar"
+            className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            ← Cihazlar
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -177,6 +190,12 @@ export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar
               ) : null}
             </dl>
           </Kart>
+
+          {adminMi(oturum) ? (
+            <Kart baslik="Kayıt Yönetimi">
+              <YonetimDugmeleri cihazId={cihaz.id} durum={cihaz.durum} />
+            </Kart>
+          ) : null}
         </div>
 
         <div className="space-y-5 lg:col-span-2">

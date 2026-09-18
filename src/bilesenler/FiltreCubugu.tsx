@@ -78,6 +78,7 @@ export function FiltreCubugu({
             { deger: STOK_DURUM.STOKTA, etiket: STOK_DURUM_ETIKET.STOKTA },
             { deger: STOK_DURUM.TRANSFERDE, etiket: STOK_DURUM_ETIKET.TRANSFERDE },
             { deger: STOK_DURUM.SATILDI, etiket: STOK_DURUM_ETIKET.SATILDI },
+            { deger: STOK_DURUM.IPTAL, etiket: STOK_DURUM_ETIKET.IPTAL },
           ]}
         />
         <Cipler
