@@ -3,10 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { iadeSonucuMu, iadeTarihiHatasi } from "@/lib/iade";
 import { logYaz } from "@/lib/log";
 import { aramaMetniUret, aramaNormalize, kodNormalize } from "@/lib/metin";
 import { prisma } from "@/lib/prisma";
-import { HAREKET_TIP, LOG_ISLEM, ODEME_TIPI, STOK_DURUM } from "@/lib/sabitler";
+import {
+  HAREKET_TIP,
+  LOG_ISLEM,
+  ODEME_TIPI,
+  STOK_DURUM,
+  STOK_DURUM_ETIKET,
+} from "@/lib/sabitler";
 import { YetkiHatasi, magazaIslemiZorunlu, oturumZorunlu } from "@/lib/yetki";
 
 // ------------------------------------------------------------- Cihaz okutma
@@ -273,4 +280,146 @@ export async function satisKaydet(_onceki: SatisDurumu, form: FormData): Promise
   }
 
   redirect(`/cihazlar/${cihazId}`);
+}
+
+// ------------------------------------------------------------------- İade
+
+/**
+ * Müşteri malı geri getirdiğinde satışı geri alır.
+ *
+ * Yetki satışla aynı: cihazın bulunduğu mağazada işlem yapabilen herkes iade
+ * alabilir — iade tezgâhta olan bir iştir, kaydın kendisi denetim izi bırakır
+ * (Iade kaydı + IADE hareketi + SATIS_IADE logu). Yanlış girilmiş kaydı silmek
+ * bambaşka bir iştir ve yöneticide kalır (cihazlar/eylemler.ts → cihaziIptalEt).
+ *
+ * Satış StokKalemi üzerinden temizlenir; ciro ve kâr raporları
+ * `durum = SATILDI` üzerinden çalıştığı için satış böylece raporlardan düşer.
+ * Satışın fotoğrafı (müşteri, tarih, tutar, ödeme tipi) Iade kaydında saklanır.
+ */
+const iadeSemasi = z.object({
+  cihazId: z.number().int().positive("Cihaz bulunamadı."),
+  neden: z.string().trim().min(3, "İade nedenini yazın.").max(300, "İade nedeni çok uzun."),
+  sonucDurum: z.string().refine(iadeSonucuMu, "İade sonucu geçersiz."),
+  iadeTarihi: z.coerce.date({ message: "İade tarihi geçersiz." }),
+});
+
+export type IadeDurumu = { hata?: string; basari?: string };
+
+export async function satisIadeAl(_onceki: IadeDurumu, form: FormData): Promise<IadeDurumu> {
+  try {
+    const oturum = await oturumZorunlu();
+
+    const sonuc = iadeSemasi.safeParse({
+      cihazId: Number(form.get("cihazId")),
+      neden: String(form.get("neden") ?? ""),
+      sonucDurum: String(form.get("sonucDurum") ?? ""),
+      iadeTarihi: String(form.get("iadeTarihi") ?? ""),
+    });
+    if (!sonuc.success) return { hata: sonuc.error.issues[0].message };
+    const veri = sonuc.data;
+
+    const cihaz = await prisma.stokKalemi.findUnique({
+      where: { id: veri.cihazId },
+      include: {
+        tedarikci: { select: { ad: true } },
+        musteri: { select: { id: true, adSoyad: true } },
+      },
+    });
+    if (!cihaz) return { hata: "Cihaz bulunamadı." };
+    if (cihaz.durum !== STOK_DURUM.SATILDI) {
+      return { hata: "Yalnız satılmış cihaz iade alınabilir." };
+    }
+    if (cihaz.satisTarihi === null || cihaz.satisFiyatiKurus === null) {
+      return { hata: "Bu cihazın satış kaydı eksik; iade alınamadan önce düzeltilmeli." };
+    }
+    magazaIslemiZorunlu(oturum, cihaz.magazaId);
+
+    const tarihHatasi = iadeTarihiHatasi({
+      satisTarihi: cihaz.satisTarihi,
+      iadeTarihi: veri.iadeTarihi,
+      bugun: new Date(),
+    });
+    if (tarihHatasi) return { hata: tarihHatasi };
+
+    const musteriAdi = cihaz.musteri?.adSoyad ?? "Müşteri";
+
+    await prisma.$transaction(async (tx) => {
+      await tx.iade.create({
+        data: {
+          stokKalemiId: cihaz.id,
+          musteriId: cihaz.musteriId,
+          magazaId: cihaz.magazaId,
+          satisTarihi: cihaz.satisTarihi!,
+          satisFiyatiKurus: cihaz.satisFiyatiKurus!,
+          alisFiyatiKurus: cihaz.alisFiyatiKurus,
+          satanKullaniciId: cihaz.satanKullaniciId,
+          odemeTipi: cihaz.odemeTipi,
+          iadeTarihi: veri.iadeTarihi,
+          neden: veri.neden,
+          sonucDurum: veri.sonucDurum,
+          alanKullaniciId: oturum.kullaniciId,
+        },
+      });
+
+      await tx.stokKalemi.update({
+        where: { id: cihaz.id },
+        data: {
+          durum: veri.sonucDurum,
+          satisTarihi: null,
+          satisFiyatiKurus: null,
+          satanKullaniciId: null,
+          musteriId: null,
+          odemeTipi: null,
+          cikisTarihi: null,
+          // Müşteri artık bu cihazın sahibi değil; arama metninden de çıkar.
+          aramaMetni: aramaMetniUret([
+            cihaz.marka,
+            cihaz.model,
+            cihaz.renk,
+            cihaz.kapasite,
+            cihaz.seriNo,
+            cihaz.barkod,
+            cihaz.tedarikci?.ad,
+            cihaz.not,
+          ]),
+        },
+      });
+
+      await tx.stokHareketi.create({
+        data: {
+          stokKalemiId: cihaz.id,
+          tip: HAREKET_TIP.IADE,
+          hedefMagazaId: cihaz.magazaId,
+          kullaniciId: oturum.kullaniciId,
+          aciklama: `${musteriAdi} iade etti (${veri.neden}) · ${STOK_DURUM_ETIKET[veri.sonucDurum]}`,
+          tarih: veri.iadeTarihi,
+        },
+      });
+    });
+
+    await logYaz(oturum, {
+      islem: LOG_ISLEM.SATIS_IADE,
+      hedefTip: "StokKalemi",
+      hedefId: cihaz.id,
+      detay: `#${cihaz.id} ${cihaz.marka} ${cihaz.model}${
+        cihaz.seriNo ? ` (${cihaz.seriNo})` : ""
+      } · ${musteriAdi} · ${veri.neden} → ${STOK_DURUM_ETIKET[veri.sonucDurum]}`,
+    });
+
+    revalidatePath(`/cihazlar/${cihaz.id}`);
+    revalidatePath("/cihazlar");
+    revalidatePath("/panel");
+    revalidatePath("/musteriler");
+    revalidatePath("/rapor");
+
+    return {
+      basari: `İade alındı; satış ciro ve kâr raporlarından düştü. Cihaz: ${
+        STOK_DURUM_ETIKET[veri.sonucDurum]
+      }.`,
+    };
+  } catch (hata) {
+    if (hata instanceof YetkiHatasi) return { hata: hata.message };
+    console.error("İade alınamadı:", hata);
+    return { hata: "İade alınamadı. Lütfen tekrar deneyin." };
+  }
 }

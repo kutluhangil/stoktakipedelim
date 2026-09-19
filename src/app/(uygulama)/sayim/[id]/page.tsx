@@ -3,16 +3,18 @@ import { notFound } from "next/navigation";
 import type { Prisma } from "@/generated/prisma/client";
 import { Kart } from "@/bilesenler/Kart";
 import { Rozet, type RozetTonu } from "@/bilesenler/Rozet";
+import { SayimFarkiFormu } from "./SayimFarkiFormu";
 import { kurusuTLYazSembollu } from "@/lib/para";
 import { prisma } from "@/lib/prisma";
 import {
   SAYIM_DURUM,
+  STOK_DURUM,
   SAYIM_SONUC,
   SAYIM_SONUC_ETIKET,
   type SayimSonuc,
 } from "@/lib/sabitler";
 import { tarihSaatYaz } from "@/lib/tarih";
-import { magazadaIslemYapabilirMi, oturumGerekli } from "@/lib/yetki";
+import { adminMi, magazadaIslemYapabilirMi, oturumGerekli } from "@/lib/yetki";
 import { SayimPaneli } from "./SayimPaneli";
 
 export const metadata = { title: "Sayım Detayı — Stok Takip" };
@@ -35,6 +37,7 @@ const SONUC_TONU: Record<SayimSonuc, RozetTonu> = {
   SATILMIS: "mor",
   KAYITSIZ: "kirmizi",
   EKSIK: "sari",
+  SEVKIYATTA: "mavi",
 };
 
 /** Sayım kalemlerini tek biçimde listeler; eksik, fazla ve sayılan tabloları bunu kullanır. */
@@ -154,6 +157,12 @@ export default async function SayimDetaySayfasi({ params }: PageProps<"/sayim/[i
   const sayabilir = devamEdiyor && magazadaIslemYapabilirMi(oturum, sayim.magazaId);
 
   const eksikDeger = eksikler.reduce((t, k) => t + (k.stokKalemi?.alisFiyatiKurus ?? 0), 0);
+  // Fark yalnız tamamlanmış sayımda ve hâlâ stokta görünen cihazlar için işlenir.
+  const islenmemisEksik = eksikler.filter(
+    (k) => k.stokKalemi?.durum === STOK_DURUM.STOKTA && k.stokKalemi?.magazaId === sayim.magazaId,
+  );
+  const farkIslenebilir =
+    sayim.durum === SAYIM_DURUM.TAMAMLANDI && adminMi(oturum) && islenmemisEksik.length > 0;
 
   return (
     <div className="space-y-5">
@@ -246,6 +255,10 @@ export default async function SayimDetaySayfasi({ params }: PageProps<"/sayim/[i
           Bu sayım iptal edildi. Stok kayıtlarına dokunulmadı.
         </div>
       )}
+
+      {farkIslenebilir ? (
+        <SayimFarkiFormu sayimId={sayim.id} eksikAdedi={islenmemisEksik.length} />
+      ) : null}
 
       <KalemTablosu
         baslik="Eksikler"

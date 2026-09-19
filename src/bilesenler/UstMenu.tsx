@@ -69,13 +69,19 @@ export function UstMenu({
         <div
           className={`${acik ? "flex" : "hidden"} w-full flex-col gap-2 sm:ml-auto sm:flex sm:w-auto sm:flex-row sm:items-center sm:gap-4`}
         >
-          <div className="text-right text-xs leading-tight">
+          <Link
+            href="/profil"
+            onClick={() => setAcik(false)}
+            className={`rounded-md px-3 py-1.5 text-right text-xs leading-tight transition ${
+              aktifMi("/profil") ? "bg-slate-700" : "hover:bg-slate-800"
+            }`}
+          >
             <div className="font-medium text-white">{kullaniciAdi}</div>
             <div className="text-slate-400">
               {rolEtiketi}
               {magazaAdi ? ` · ${magazaAdi}` : ""}
             </div>
-          </div>
+          </Link>
           <form action={cikisEylemi}>
             <button
               type="submit"

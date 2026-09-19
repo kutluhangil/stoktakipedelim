@@ -572,20 +572,91 @@ export async function sifreSifirla(_onceki: AyarDurumu, form: FormData): Promise
     });
     if (!kullanici) return { hata: "Kullanıcı bulunamadı." };
 
+    // Sıfırlanan şifre eski oturumları da kapatmalı; aksi hâlde jetonu elinde
+    // tutan kişi şifre değişse de 12 saat daha girebilir.
     await prisma.kullanici.update({
       where: { id },
-      data: { sifreHash: await sifreHashle(sifre) },
+      data: { sifreHash: await sifreHashle(sifre), oturumSurumu: { increment: 1 } },
     });
 
     await logYaz(oturum, {
       islem: LOG_ISLEM.AYAR_DEGISTIR,
       hedefTip: "Kullanici",
       hedefId: id,
-      detay: `${kullanici.kullaniciAdi} şifresi sıfırlandı`,
+      detay: `${kullanici.kullaniciAdi} şifresi sıfırlandı, açık oturumları kapatıldı`,
     });
     tazele();
     return { basari: `${kullanici.kullaniciAdi} için yeni şifre kaydedildi.` };
   });
 }
 
+/**
+ * Kullanıcının tüm açık oturumlarını kapatır (yalnız yönetici).
+ *
+ * Rol düşürme ve pasife alma her istekte veritabanından okunduğu için anında
+ * etkili; bu eylem ise "jeton başkasının eline geçmiş olabilir" durumu içindir.
+ */
+export async function oturumlariKapat(_onceki: AyarDurumu, form: FormData): Promise<AyarDurumu> {
+  return calistir(async (oturum) => {
+    const id = Number(form.get("id"));
+    if (!Number.isInteger(id) || id <= 0) return { hata: "Kullanıcı bulunamadı." };
+
+    const kullanici = await prisma.kullanici.findUnique({
+      where: { id },
+      select: { kullaniciAdi: true },
+    });
+    if (!kullanici) return { hata: "Kullanıcı bulunamadı." };
+
+    await prisma.kullanici.update({
+      where: { id },
+      data: { oturumSurumu: { increment: 1 } },
+    });
+
+    await logYaz(oturum, {
+      islem: LOG_ISLEM.OTURUM_IPTAL,
+      hedefTip: "Kullanici",
+      hedefId: id,
+      detay: `${kullanici.kullaniciAdi} kullanıcısının açık oturumları kapatıldı`,
+    });
+    tazele();
+    return {
+      basari:
+        id === oturum.kullaniciId
+          ? `${kullanici.kullaniciAdi} oturumları kapatıldı; kendi oturumunuz da sona erdi.`
+          : `${kullanici.kullaniciAdi} tüm cihazlardan çıkarıldı.`,
+    };
+  });
+}
+
 export type { Rol };
+
+// -------------------------------------------------------------- Firma bilgisi
+
+/**
+ * Üst menüde ve rapor başlıklarında görünen firma adını değiştirir.
+ *
+ * Değer `Ayar` tablosunda tutuluyordu ama yalnız seed yazıyordu; bayi adını
+ * değiştirmek için veritabanına elle girmek gerekiyordu.
+ */
+export async function firmaAdiKaydet(_onceki: AyarDurumu, form: FormData): Promise<AyarDurumu> {
+  return calistir(async (oturum) => {
+    const sonuc = adSemasi.safeParse(String(form.get("firmaAdi") ?? ""));
+    if (!sonuc.success) return { hata: sonuc.error.issues[0].message };
+
+    await prisma.ayar.upsert({
+      where: { anahtar: "firma_adi" },
+      update: { deger: sonuc.data },
+      create: { anahtar: "firma_adi", deger: sonuc.data },
+    });
+
+    await logYaz(oturum, {
+      islem: LOG_ISLEM.AYAR_DEGISTIR,
+      hedefTip: "Ayar",
+      detay: `Firma adı: ${sonuc.data}`,
+    });
+    tazele();
+    // Firma adı her sayfanın üst menüsünde; düzen yeniden kurulmalı.
+    revalidatePath("/", "layout");
+    return { basari: "Firma adı güncellendi." };
+  });
+}

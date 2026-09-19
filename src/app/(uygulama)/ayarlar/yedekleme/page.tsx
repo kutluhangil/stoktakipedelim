@@ -4,7 +4,7 @@ import { Rozet } from "@/bilesenler/Rozet";
 import { prisma } from "@/lib/prisma";
 import { tarihSaatYaz } from "@/lib/tarih";
 import { adminSayfasi } from "@/lib/yetki";
-import { veritabaniYolu, yedekAyariniOku } from "@/lib/yedek";
+import { sifrelemeHazirMi, veritabaniYolu, yedekAyariniOku } from "@/lib/yedek";
 import { YedekDugmeleri } from "./YedekDugmeleri";
 
 export const metadata = { title: "Yedekleme — Stok Takip" };
@@ -45,6 +45,7 @@ export default async function YedeklemeSayfasi() {
 
   const saklama = Number(process.env.YEDEK_SAKLAMA ?? 14);
   const cronAnahtariVar = Boolean(process.env.YEDEK_ANAHTARI && process.env.YEDEK_ANAHTARI.length >= 16);
+  const sifreleme = sifrelemeHazirMi();
 
   // Son başarılı yedeğin üzerinden 48 saatten fazla geçtiyse uyar.
   const gecikme = gecenSaat(sonBasarili?.tarih);
@@ -52,11 +53,18 @@ export default async function YedeklemeSayfasi() {
 
   return (
     <div className="space-y-5">
+      {!sifreleme.hazir ? (
+        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          Yedekleme kapalı: {sifreleme.mesaj} Yedek dosyası müşteri adı, telefonu, TCKN ve
+          adresini içerdiği için anahtar tanımlanmadan yedek alınmaz.
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Google Drive Yedekleme</h1>
           <p className="mt-0.5 text-sm text-slate-500">
-            Veritabanının tutarlı bir kopyası sıkıştırılıp Drive&apos;a yüklenir.
+            Veritabanının tutarlı bir kopyası sıkıştırılıp şifrelenerek Drive&apos;a yüklenir.
           </p>
         </div>
         <Link
@@ -104,6 +112,14 @@ export default async function YedeklemeSayfasi() {
               <dd className="text-right">
                 <Rozet ton={cronAnahtariVar ? "yesil" : "sari"}>
                   {cronAnahtariVar ? "Tanımlı" : "Tanımsız"}
+                </Rozet>
+              </dd>
+            </div>
+            <div className="flex justify-between gap-3 border-b border-slate-100 pb-2">
+              <dt className="text-slate-500">Şifreleme</dt>
+              <dd className="text-right">
+                <Rozet ton={sifreleme.hazir ? "yesil" : "kirmizi"}>
+                  {sifreleme.hazir ? "AES-256-GCM" : "Anahtar yok"}
                 </Rozet>
               </dd>
             </div>
@@ -200,7 +216,24 @@ GOOGLE_ISTEMCI_SIRRI="..."
 GOOGLE_YENILEME_JETONU="..."
 GOOGLE_DRIVE_KLASOR_ID="..."   # Drive'da klasör açıp URL'deki kimliği yazın
 YEDEK_SAKLAMA="14"
-YEDEK_ANAHTARI="openssl rand -hex 24 çıktısı"`}
+YEDEK_ANAHTARI="openssl rand -hex 24 çıktısı"
+YEDEK_SIFRELEME_ANAHTARI="openssl rand -hex 32 çıktısı"`}
+            </pre>
+            <p className="mt-1 text-slate-600">
+              <strong>YEDEK_SIFRELEME_ANAHTARI</strong> yedek dosyasını AES-256-GCM ile
+              şifreler ve zorunludur; tanımlı değilse yedek alınmaz. Bu anahtarı
+              kaybederseniz yedekler açılamaz — parola yöneticisinde saklayın.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-1 font-semibold text-slate-900">Yedeği geri açma</h3>
+            <p className="text-slate-600">
+              Drive&apos;daki <code className="rounded bg-slate-100 px-1">.db.gz.enc</code>{" "}
+              dosyasını indirip çözün:
+            </p>
+            <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100">
+{`npm run yedek:coz -- stok-yedek-20260919-0300.db.gz.enc`}
             </pre>
           </div>
 

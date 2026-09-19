@@ -6,9 +6,16 @@ import { z } from "zod";
 import { logYaz } from "@/lib/log";
 import { aramaMetniUret, kodNormalize } from "@/lib/metin";
 import { prisma } from "@/lib/prisma";
-import { HAREKET_TIP, LOG_ISLEM, STOK_DURUM } from "@/lib/sabitler";
+import {
+  HAREKET_TIP,
+  LOG_ISLEM,
+  STOGA_DONEBILEN,
+  STOK_DURUM,
+  STOK_DURUM_ETIKET,
+  type StokDurum,
+} from "@/lib/sabitler";
 import { SUTUN_ANAHTARLARI, sutunlariSirala, type SutunAnahtari } from "@/lib/sutunlar";
-import { YetkiHatasi, adminZorunlu, oturumZorunlu } from "@/lib/yetki";
+import { YetkiHatasi, adminZorunlu, magazaIslemiZorunlu, oturumZorunlu } from "@/lib/yetki";
 
 export type SutunDurumu = { hata?: string };
 
@@ -386,5 +393,140 @@ export async function cihazIptaliniGeriAl(
     if (hata instanceof YetkiHatasi) return { hata: hata.message };
     console.error("İptal geri alınamadı:", hata);
     return { hata: "İptal geri alınamadı. Lütfen tekrar deneyin." };
+  }
+}
+
+// -------------------------------------------------------------- Satışa açma
+
+export type StogaAlmaDurumu = { hata?: string; basari?: string };
+
+/**
+ * İade alınmış, arızalı veya kayıp cihazı tekrar satılabilir hâle getirir.
+ *
+ * Bu durumların hepsinin stoğa tek dönüş yolu burasıdır: kontrol biten iade,
+ * servisten gelen arızalı, sayımdan sonra bulunan kayıp cihaz. Yetki iadeyle
+ * aynı — cihazın bulunduğu mağazada işlem yapabilen herkes.
+ */
+export async function cihaziStogaAl(
+  _onceki: StogaAlmaDurumu,
+  form: FormData,
+): Promise<StogaAlmaDurumu> {
+  try {
+    const oturum = await oturumZorunlu();
+
+    const cihazId = Number(form.get("cihazId"));
+    const aciklama = String(form.get("aciklama") ?? "").trim();
+    if (!Number.isInteger(cihazId) || cihazId <= 0) return { hata: "Cihaz bulunamadı." };
+    if (aciklama.length > 300) return { hata: "Açıklama çok uzun." };
+
+    const cihaz = await prisma.stokKalemi.findUnique({
+      where: { id: cihazId },
+      select: { id: true, durum: true, magazaId: true, marka: true, model: true, seriNo: true },
+    });
+    if (!cihaz) return { hata: "Cihaz bulunamadı." };
+
+    if (!(STOGA_DONEBILEN as readonly string[]).includes(cihaz.durum)) {
+      return { hata: "Yalnız iade alınmış, arızalı veya kayıp cihaz satışa açılabilir." };
+    }
+    magazaIslemiZorunlu(oturum, cihaz.magazaId);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.stokKalemi.update({
+        where: { id: cihazId },
+        data: { durum: STOK_DURUM.STOKTA },
+      });
+      await tx.stokHareketi.create({
+        data: {
+          stokKalemiId: cihazId,
+          tip: HAREKET_TIP.DUZELTME,
+          hedefMagazaId: cihaz.magazaId,
+          kullaniciId: oturum.kullaniciId,
+          aciklama: aciklama
+            ? `Satışa açıldı: ${aciklama}`
+            : `${STOK_DURUM_ETIKET[cihaz.durum as StokDurum] ?? cihaz.durum} durumundan satışa açıldı`,
+        },
+      });
+    });
+
+    await logYaz(oturum, {
+      islem: LOG_ISLEM.STOK_DUZENLE,
+      hedefTip: "StokKalemi",
+      hedefId: cihazId,
+      detay: `#${cihazId} ${cihaz.marka} ${cihaz.model}${
+        cihaz.seriNo ? ` (${cihaz.seriNo})` : ""
+      } satışa açıldı${aciklama ? `: ${aciklama}` : ""}`,
+    });
+
+    revalidatePath(`/cihazlar/${cihazId}`);
+    revalidatePath("/cihazlar");
+    revalidatePath("/panel");
+    return { basari: "Cihaz stokta; tekrar satılabilir." };
+  } catch (hata) {
+    if (hata instanceof YetkiHatasi) return { hata: hata.message };
+    console.error("Cihaz satışa açılamadı:", hata);
+    return { hata: "Cihaz satışa açılamadı. Lütfen tekrar deneyin." };
+  }
+}
+
+/**
+ * Stoktaki cihazı arızalı olarak işaretler.
+ *
+ * Arızalı cihaz stok değerinde ve satışta görünmez; servis dönüşünde
+ * `cihaziStogaAl` ile geri açılır. Satılmış veya sevkiyattaki cihaz
+ * işaretlenemez — satılmışta iade, sevkiyatta önce kabul akışı işler.
+ */
+export async function cihaziArizaliYap(
+  _onceki: StogaAlmaDurumu,
+  form: FormData,
+): Promise<StogaAlmaDurumu> {
+  try {
+    const oturum = await oturumZorunlu();
+
+    const cihazId = Number(form.get("cihazId"));
+    const neden = String(form.get("neden") ?? "").trim();
+    if (!Number.isInteger(cihazId) || cihazId <= 0) return { hata: "Cihaz bulunamadı." };
+    if (neden.length < 3) return { hata: "Arıza nedenini yazın." };
+    if (neden.length > 300) return { hata: "Arıza nedeni çok uzun." };
+
+    const cihaz = await prisma.stokKalemi.findUnique({
+      where: { id: cihazId },
+      select: { id: true, durum: true, magazaId: true, marka: true, model: true, seriNo: true },
+    });
+    if (!cihaz) return { hata: "Cihaz bulunamadı." };
+    if (cihaz.durum !== STOK_DURUM.STOKTA) {
+      return { hata: "Yalnız stoktaki cihaz arızalı işaretlenebilir." };
+    }
+    magazaIslemiZorunlu(oturum, cihaz.magazaId);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.stokKalemi.update({ where: { id: cihazId }, data: { durum: STOK_DURUM.ARIZALI } });
+      await tx.stokHareketi.create({
+        data: {
+          stokKalemiId: cihazId,
+          tip: HAREKET_TIP.DUZELTME,
+          kaynakMagazaId: cihaz.magazaId,
+          kullaniciId: oturum.kullaniciId,
+          aciklama: `Arızalı işaretlendi: ${neden}`,
+        },
+      });
+    });
+
+    await logYaz(oturum, {
+      islem: LOG_ISLEM.STOK_DUZENLE,
+      hedefTip: "StokKalemi",
+      hedefId: cihazId,
+      detay: `#${cihazId} ${cihaz.marka} ${cihaz.model}${
+        cihaz.seriNo ? ` (${cihaz.seriNo})` : ""
+      } arızalı işaretlendi: ${neden}`,
+    });
+
+    revalidatePath(`/cihazlar/${cihazId}`);
+    revalidatePath("/cihazlar");
+    revalidatePath("/panel");
+    return { basari: "Cihaz arızalı olarak işaretlendi; stok değerinden ve satıştan düştü." };
+  } catch (hata) {
+    if (hata instanceof YetkiHatasi) return { hata: hata.message };
+    console.error("Cihaz arızalı işaretlenemedi:", hata);
+    return { hata: "Cihaz arızalı işaretlenemedi. Lütfen tekrar deneyin." };
   }
 }

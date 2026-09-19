@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { VADE_ETIKET, VADE_SECENEKLERI, vadeEtiketi } from "./sabitler";
 import { inputTarih } from "./tarih";
 import { vadeDurumu, vadeTarihiHesapla } from "./vade";
 
@@ -79,4 +80,17 @@ test("gün sınırı saat bileşeninden etkilenmez", () => {
   const v = vadeDurumu(fatura(21, "2026-06-15T00:05:00"), new Date("2026-06-15T23:50:00"));
   assert.equal(v.durum, "YAKLASIYOR");
   assert.equal(v.kalanGun, 0);
+});
+
+test("vadeEtiketi — serbest gün sayısı da etiketlenir", () => {
+  assert.equal(vadeEtiketi(0), "Vadesiz");
+  assert.equal(vadeEtiketi(21), "21 gün");
+  assert.equal(vadeEtiketi(37), "37 gün");
+  assert.equal(vadeEtiketi(365), "365 gün");
+});
+
+test("VADE_ETIKET — hızlı seçim değerlerini kapsar", () => {
+  for (const gun of VADE_SECENEKLERI) {
+    assert.equal(VADE_ETIKET[gun], vadeEtiketi(gun));
+  }
 });

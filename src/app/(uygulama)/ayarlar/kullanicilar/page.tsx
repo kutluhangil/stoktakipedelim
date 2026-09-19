@@ -8,7 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { ROLLER, ROL_ETIKET, type Rol } from "@/lib/sabitler";
 import { tarihSaatYaz } from "@/lib/tarih";
 import { adminSayfasi } from "@/lib/yetki";
-import { kullaniciEkle, kullaniciGuncelle, sifreSifirla } from "../eylemler";
+import { kullaniciEkle, kullaniciGuncelle, oturumlariKapat, sifreSifirla } from "../eylemler";
 
 export const metadata = { title: "Kullanıcılar — Stok Takip" };
 
@@ -227,6 +227,18 @@ export default async function KullanicilarSayfasi() {
                   <GonderDugmesi tur="ikincil" bekleyenMetin="Kaydediliyor…">
                     Şifreyi Sıfırla
                   </GonderDugmesi>
+                </div>
+              </EylemFormu>
+
+              <EylemFormu eylem={oturumlariKapat}>
+                <input type="hidden" name="id" value={k.id} />
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <GonderDugmesi tur="ikincil" bekleyenMetin="Kapatılıyor…">
+                    Tüm Oturumları Kapat
+                  </GonderDugmesi>
+                  <span className="text-xs text-slate-500">
+                    Jetonu başkasının eline geçtiyse: açık oturumların hepsi anında düşer.
+                  </span>
                 </div>
               </EylemFormu>
             </div>

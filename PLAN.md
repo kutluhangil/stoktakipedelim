@@ -46,7 +46,23 @@ Ayrıntılı gereksinimler: [SPEC.md](SPEC.md)
 27. [x] Sayım kapatma + sonuç raporu (eksik, fazla, sayılan) + Excel
 28. [x] Sayım geçmişi
 
+### Faz 4 ekleri
+- [x] Sayım farkının işlenmesi (eksik cihazların `KAYIP` durumuna alınması)
+- [x] Sevkiyattaki cihazların sayım listesinde görünmesi
+
+### Faz 3 ekleri
+- [x] Oturum güvenliği: jetonun her istekte veritabanıyla doğrulanması, rol/mağaza/aktiflik
+      değişiminin anında etkili olması, "tüm oturumları kapat"
+- [x] Kullanıcının kendi şifresini değiştirmesi (`/profil`)
+- [x] Giriş denemesi sınırı (kullanıcı ve IP bazlı)
+- [x] Satış iadesi: satılmış cihazı geri alma, satışın ciro ve kâr raporlarından
+      düşmesi, iade kaydının müşteri tarihçesinde ve iade raporunda görünmesi
+- [x] İade/arıza kontrolü biten cihazı tekrar satışa açma
+
 ### Faz 2 ekleri
+- [x] İkinci el alım: tezgâhtan cihaz alma, satıcının kayda geçmesi, faturasız stok girişi
+- [x] Arızalı işaretleme ve servis dönüşünde satışa açma
+- [x] Serbest vade günü (0–365)
 - [x] Mağaza yönetimi: yeni şube ekleme, düzenleme, merkez depo işaretleme,
       stoklu mağazayı pasife alma/silme koruması
 
@@ -57,9 +73,19 @@ Ayrıntılı gereksinimler: [SPEC.md](SPEC.md)
 32. [x] Log kaydı (tüm kritik işlemler) + log görüntüleme ekranı (admin)
 33. [x] Panel (dashboard): mağaza kartları, vadesi geçen sayısı, bekleyen sevkiyat, son hareketler, grafik
 
+### Faz 5 ekleri (rapor)
+- [x] Excel aktarımında satır sınırı uyarısı
+- [x] Firma adının ayarlar ekranından değiştirilmesi
+
+### Faz 5 ekleri
+- [x] Müşteri kaydı düzeltme ve KVKK silme (bağlı işlemi olanda anonimleştirme)
+
 ## Faz 6 — Yedekleme ve Dağıtım ✅ tamamlandı
 34. [x] Google Drive entegrasyonu (OAuth ve servis hesabı)
 35. [x] Günlük otomatik yedek (gzip + yükleme + rotasyon)
 36. [x] "Şimdi yedekle" butonu, bağlantı sınama, son yedek durumu, gecikme uyarısı
 37. [x] Testler: IMEI tekillik, transfer kabul akışı, vade hesabı, sayım farkları, yetki kontrolleri
 38. [x] README, kurulum ve sunucu dağıtım dokümanı
+
+### Faz 6 ekleri
+- [x] Yedek dosyalarının AES-256-GCM ile şifrelenmesi ve `npm run yedek:coz` ile geri açılması

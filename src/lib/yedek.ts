@@ -5,9 +5,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { google } from "googleapis";
 import { prisma } from "./prisma";
+import { SIFRELI_UZANTI, dosyayiSifrele, yedekAnahtariniOku } from "./sifreliYedek";
 import { anlikGoruntuAl, gziple, veritabaniYolu, yedekDosyaAdi } from "./sqliteAnlik";
 
 export { veritabaniYolu };
+
+/** Şifreleme anahtarının yapılandırılıp yapılandırılmadığını söyler. */
+export function sifrelemeHazirMi(): { hazir: boolean; mesaj: string } {
+  try {
+    yedekAnahtariniOku();
+    return { hazir: true, mesaj: "Yedekler AES-256-GCM ile şifreleniyor." };
+  } catch (hata) {
+    return { hazir: false, mesaj: hata instanceof Error ? hata.message : String(hata) };
+  }
+}
 
 export type YedekAyari =
   | { yontem: "OAUTH"; klasorId: string | null }
@@ -101,19 +112,27 @@ export async function yedekAl(
   saklama = Number(process.env.YEDEK_SAKLAMA ?? VARSAYILAN_SAKLAMA),
 ): Promise<YedekSonucu> {
   const tarih = new Date();
-  const dosyaAdi = yedekDosyaAdi(tarih);
+  // Yedek şifrelendiği için dosya adı .enc ile biter; içeriği yalnız
+  // YEDEK_SIFRELEME_ANAHTARI ile açılabilir (betikler/yedek-coz.mjs).
+  const dosyaAdi = yedekDosyaAdi(tarih) + SIFRELI_UZANTI;
   const gecici = path.join(tmpdir(), `stok-yedek-${Date.now()}`);
   const anlikYol = path.join(gecici, "anlik.db");
-  const gzipYol = path.join(gecici, dosyaAdi);
+  const gzipYol = path.join(gecici, yedekDosyaAdi(tarih));
+  const sifreliYol = path.join(gecici, dosyaAdi);
 
   // Hata durumunda da kaydedilebilmesi için try bloğunun dışında tutulur.
   let boyut = 0;
   let sonuc: YedekSonucu = { basarili: false, dosyaAdi, boyutBayt: 0 };
 
   try {
+    // Anahtar eksikse yedek hiç alınmaz: müşteri verisi düz çıkmasın diye
+    // sessiz bir geri düşüş bilerek yok.
+    const anahtar = yedekAnahtariniOku();
+
     await mkdir(gecici, { recursive: true });
     anlikGoruntuAl(veritabaniYolu(), anlikYol);
-    boyut = await gziple(anlikYol, gzipYol);
+    await gziple(anlikYol, gzipYol);
+    boyut = await dosyayiSifrele(gzipYol, sifreliYol, anahtar);
 
     const ayar = yedekAyariniOku();
     const drive = driveIstemcisi();
@@ -124,7 +143,7 @@ export async function yedekAl(
         name: dosyaAdi,
         ...(klasorId ? { parents: [klasorId] } : {}),
       },
-      media: { mimeType: "application/gzip", body: createReadStream(gzipYol) },
+      media: { mimeType: "application/octet-stream", body: createReadStream(sifreliYol) },
       fields: "id,name,size",
       supportsAllDrives: true,
     });

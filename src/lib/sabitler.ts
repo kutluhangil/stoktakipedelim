@@ -20,6 +20,11 @@ export const STOK_DURUM = {
   IADE: "IADE",
   ARIZALI: "ARIZALI",
   /**
+   * Sayımda bulunamayan cihaz. Kaydı ve tarihçesi durur ama stok adedine,
+   * stok değerine ve satışa girmez; bulunursa "Satışa aç" ile geri döner.
+   */
+  KAYIP: "KAYIP",
+  /**
    * Yanlış girilmiş kayıt. Kalıcı silme yerine bu duruma alınır:
    * listelerden, stok değerinden ve raporlardan düşer ama kaydın kendisi ve
    * hareket tarihçesi durur, yönetici geri alabilir.
@@ -34,7 +39,33 @@ export const STOK_DURUM_ETIKET: Record<StokDurum, string> = {
   SATILDI: "Satıldı",
   IADE: "İade",
   ARIZALI: "Arızalı",
+  KAYIP: "Kayıp",
   IPTAL: "İptal",
+};
+
+/**
+ * İade alınan cihazın gideceği durumlar. Müşteri malı geri getirdiğinde cihaz
+ * fiziksel olarak elimizdedir; tekrar satılabilir mi, kontrol mü bekliyor,
+ * yoksa arızalı mı — karar iadeyi alan kişinindir.
+ */
+export const IADE_SONUCLARI = [
+  STOK_DURUM.STOKTA,
+  STOK_DURUM.IADE,
+  STOK_DURUM.ARIZALI,
+] as const;
+
+/** "Satışa aç" ile stoğa döndürülebilen durumlar. */
+export const STOGA_DONEBILEN = [
+  STOK_DURUM.IADE,
+  STOK_DURUM.ARIZALI,
+  STOK_DURUM.KAYIP,
+] as const;
+export type IadeSonucu = (typeof IADE_SONUCLARI)[number];
+
+export const IADE_SONUC_ACIKLAMA: Record<IadeSonucu, string> = {
+  STOKTA: "Sorunsuz, hemen tekrar satılabilir",
+  IADE: "Kontrol bekliyor, satışa açılmadı",
+  ARIZALI: "Arızalı, servise gidecek",
 };
 
 export const TRANSFER_DURUM = {
@@ -95,6 +126,8 @@ export const SAYIM_SONUC = {
   SATILMIS: "SATILMIS",
   KAYITSIZ: "KAYITSIZ",
   EKSIK: "EKSIK",
+  /** Sayım başlarken bu depodan çıkmış ama karşı mağazaca kabul edilmemiş cihaz. */
+  SEVKIYATTA: "SEVKIYATTA",
 } as const;
 export type SayimSonuc = (typeof SAYIM_SONUC)[keyof typeof SAYIM_SONUC];
 
@@ -104,6 +137,7 @@ export const SAYIM_SONUC_ETIKET: Record<SayimSonuc, string> = {
   SATILMIS: "Satılmış görünüyor",
   KAYITSIZ: "Sistemde kayıtlı değil",
   EKSIK: "Okutulmadı (eksik)",
+  SEVKIYATTA: "Sevkiyatta (depoda olmamalı)",
 };
 
 export const ODEME_TIPI = {
@@ -123,13 +157,23 @@ export const ODEME_TIPI_ETIKET: Record<OdemeTipi, string> = {
   DIGER: "Diğer",
 };
 
-/** Tedarikçinin uyguladığı vade seçenekleri (gün). */
-export const VADE_SECENEKLERI = [0, 21, 45] as const;
-export const VADE_ETIKET: Record<number, string> = {
-  0: "Vadesiz",
-  21: "21 gün",
-  45: "45 gün",
-};
+/** Hızlı seçim için sık kullanılan vadeler; serbest gün girişi de kabul edilir. */
+export const VADE_SECENEKLERI = [0, 21, 30, 45, 60, 90] as const;
+
+/** Vadenin en fazla bu kadar gün olmasına izin verilir. */
+export const VADE_EN_FAZLA_GUN = 365;
+
+export function vadeEtiketi(gun: number): string {
+  return gun === 0 ? "Vadesiz" : `${gun} gün`;
+}
+
+/**
+ * Geriye dönük uyumluluk için bilinen değerlerin etiket haritası.
+ * Serbest gün girişinde vadeEtiketi() kullanılır.
+ */
+export const VADE_ETIKET: Record<number, string> = Object.fromEntries(
+  VADE_SECENEKLERI.map((g) => [g, vadeEtiketi(g)]),
+);
 
 /** Vadeye bu kadar gün veya daha az kaldıysa satır sarı uyarı verir. */
 export const VADE_UYARI_GUN = 7;
@@ -150,5 +194,12 @@ export const LOG_ISLEM = {
   EXCEL_AKTAR: "EXCEL_AKTAR",
   AYAR_DEGISTIR: "AYAR_DEGISTIR",
   YEDEK_AL: "YEDEK_AL",
+  SATIS_IADE: "SATIS_IADE",
+  SIFRE_DEGISTIR: "SIFRE_DEGISTIR",
+  OTURUM_IPTAL: "OTURUM_IPTAL",
+  GIRIS_KILIT: "GIRIS_KILIT",
+  MUSTERI_DUZENLE: "MUSTERI_DUZENLE",
+  MUSTERI_SIL: "MUSTERI_SIL",
+  SAYIM_FARK: "SAYIM_FARK",
 } as const;
 export type LogIslem = (typeof LOG_ISLEM)[keyof typeof LOG_ISLEM];

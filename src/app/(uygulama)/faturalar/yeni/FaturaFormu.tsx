@@ -4,7 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { GonderDugmesi } from "@/bilesenler/Dugme";
 import { GIRDI_SINIFI } from "@/bilesenler/Alan";
 import { kurusuTLYaz, tlyiKurusaCevir } from "@/lib/para";
-import { VADE_ETIKET, VADE_SECENEKLERI } from "@/lib/sabitler";
+import { VADE_EN_FAZLA_GUN, VADE_SECENEKLERI, vadeEtiketi } from "@/lib/sabitler";
 import { inputTarih } from "@/lib/tarih";
 import { faturaKaydet, type FaturaDurumu } from "../eylemler";
 
@@ -236,13 +236,27 @@ export function FaturaFormu({
             <label htmlFor="vadeGun" className={KUCUK_ETIKET}>
               Vade (tedarikçinin uyguladığı)
             </label>
-            <select id="vadeGun" name="vadeGun" defaultValue="0" className={GIRDI_SINIFI}>
+            {/* Sık kullanılanlar hazır; tedarikçi başka gün veriyorsa serbest girilir. */}
+            <input
+              id="vadeGun"
+              name="vadeGun"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={VADE_EN_FAZLA_GUN}
+              step={1}
+              defaultValue={0}
+              list="vadeSecenekleri"
+              className={GIRDI_SINIFI}
+            />
+            <datalist id="vadeSecenekleri">
               {VADE_SECENEKLERI.map((v) => (
                 <option key={v} value={v}>
-                  {VADE_ETIKET[v]}
+                  {vadeEtiketi(v)}
                 </option>
               ))}
-            </select>
+            </datalist>
+            <p className="mt-1 text-xs text-slate-500">Gün sayısı; vadesiz için 0.</p>
           </div>
 
           <div>
