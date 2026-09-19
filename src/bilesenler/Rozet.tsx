@@ -37,6 +37,8 @@ const DURUM_TONU: Record<StokDurum, RozetTonu> = {
   [STOK_DURUM.SATILDI]: "yesil",
   [STOK_DURUM.IADE]: "sari",
   [STOK_DURUM.ARIZALI]: "kirmizi",
+  [STOK_DURUM.KAYIP]: "kirmizi",
+  [STOK_DURUM.IPTAL]: "nötr",
 };
 
 export function DurumRozeti({ durum }: { durum: string }) {

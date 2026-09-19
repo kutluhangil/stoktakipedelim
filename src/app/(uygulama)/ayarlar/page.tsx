@@ -1,4 +1,9 @@
 import Link from "next/link";
+import { GIRDI_SINIFI } from "@/bilesenler/Alan";
+import { GonderDugmesi } from "@/bilesenler/Dugme";
+import { EylemFormu } from "@/bilesenler/EylemFormu";
+import { Kart } from "@/bilesenler/Kart";
+import { firmaAdiKaydet } from "./eylemler";
 import { prisma } from "@/lib/prisma";
 import { adminSayfasi } from "@/lib/yetki";
 
@@ -43,14 +48,22 @@ function Bolum({ baslik, aciklama, yol, sayi, faz }: BolumProps) {
 export default async function AyarlarSayfasi() {
   await adminSayfasi();
 
-  const [kategoriSayisi, tedarikciSayisi, magazaSayisi, kullaniciSayisi, logSayisi, yedekSayisi] =
-    await Promise.all([
+  const [
+    kategoriSayisi,
+    tedarikciSayisi,
+    magazaSayisi,
+    kullaniciSayisi,
+    logSayisi,
+    yedekSayisi,
+    firmaAdi,
+  ] = await Promise.all([
       prisma.kategori.count({ where: { aktif: true } }),
       prisma.tedarikci.count({ where: { aktif: true } }),
       prisma.magaza.count({ where: { aktif: true } }),
       prisma.kullanici.count({ where: { aktif: true } }),
       prisma.log.count(),
       prisma.yedek.count({ where: { durum: "BASARILI" } }),
+      prisma.ayar.findUnique({ where: { anahtar: "firma_adi" } }),
     ]);
 
   return (
@@ -59,6 +72,29 @@ export default async function AyarlarSayfasi() {
         <h1 className="text-xl font-semibold text-slate-900">Ayarlar</h1>
         <p className="mt-0.5 text-sm text-slate-500">Yalnızca yönetici erişebilir.</p>
       </div>
+
+      <Kart baslik="Firma Bilgisi">
+        <EylemFormu eylem={firmaAdiKaydet}>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[260px] flex-1">
+              <label htmlFor="firmaAdi" className="mb-1 block text-xs font-medium text-slate-600">
+                Firma adı (üst menüde ve rapor başlıklarında görünür)
+              </label>
+              <input
+                id="firmaAdi"
+                name="firmaAdi"
+                defaultValue={firmaAdi?.deger ?? "Stok Takip"}
+                maxLength={60}
+                required
+                className={GIRDI_SINIFI}
+              />
+            </div>
+            <GonderDugmesi tur="ikincil" bekleyenMetin="Kaydediliyor…">
+              Kaydet
+            </GonderDugmesi>
+          </div>
+        </EylemFormu>
+      </Kart>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Bolum

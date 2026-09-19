@@ -5,7 +5,10 @@ import { gunSonu } from "./tarih";
 
 export type RaporAraligi = { baslangic: Date | null; bitis: Date | null };
 
-function tarihKosulu(alan: "girisTarihi" | "satisTarihi", aralik: RaporAraligi) {
+function tarihKosulu(
+  alan: "girisTarihi" | "satisTarihi" | "iadeTarihi" | "alimTarihi",
+  aralik: RaporAraligi,
+) {
   const kosul: { gte?: Date; lte?: Date } = {};
   if (aralik.baslangic) kosul.gte = aralik.baslangic;
   if (aralik.bitis) kosul.lte = gunSonu(aralik.bitis);
@@ -84,7 +87,8 @@ export async function vadeRaporu(bugun: Date = new Date()) {
 export async function girisCikisRaporu(aralik: RaporAraligi) {
   const [girisler, satislar] = await Promise.all([
     prisma.stokKalemi.aggregate({
-      where: tarihKosulu("girisTarihi", aralik),
+      // İptal edilmiş kayıt hiç girilmemiş sayılır, giriş adedine katılmaz.
+      where: { durum: { not: STOK_DURUM.IPTAL }, ...tarihKosulu("girisTarihi", aralik) },
       _count: { _all: true },
       _sum: { alisFiyatiKurus: true },
     }),
@@ -106,6 +110,76 @@ export async function girisCikisRaporu(aralik: RaporAraligi) {
     satilanMaliyet,
     karKurus: satisTutari - satilanMaliyet,
   };
+}
+
+/**
+ * Aralıkta tezgâhtan alınan ikinci el cihazlar.
+ *
+ * Bu alımların faturası yoktur; vade raporunda görünmezler. Kasadan çıkan parayı
+ * görünür kılmak için ayrı raporlanır.
+ */
+export async function ikinciElRaporu(aralik: RaporAraligi) {
+  const alimlar = await prisma.ikinciElAlim.findMany({
+    where: tarihKosulu("alimTarihi", aralik),
+    orderBy: { alimTarihi: "desc" },
+    include: {
+      stokKalemi: { select: { id: true, marka: true, model: true, seriNo: true, durum: true } },
+      musteri: { select: { adSoyad: true, telefon: true } },
+      magaza: { select: { ad: true } },
+      alanKullanici: { select: { adSoyad: true } },
+    },
+  });
+
+  return alimlar.map((a) => ({
+    id: a.id,
+    cihazId: a.stokKalemiId,
+    cihaz: `${a.stokKalemi.marka} ${a.stokKalemi.model}`,
+    seriNo: a.stokKalemi.seriNo,
+    durum: a.stokKalemi.durum,
+    magaza: a.magaza.ad,
+    satan: a.musteri.adSoyad,
+    satanTelefon: a.musteri.telefon,
+    alimTarihi: a.alimTarihi,
+    tutarKurus: a.alisFiyatiKurus,
+    odemeTipi: a.odemeTipi,
+    alan: a.alanKullanici.adSoyad,
+  }));
+}
+
+/**
+ * Aralıkta alınan iadeler.
+ *
+ * İade edilen satış StokKalemi üzerinden silindiği için ciro ve kâr raporlarına
+ * zaten girmez; bu rapor "raporlardan ne düştü"yü görünür kılar.
+ */
+export async function iadeRaporu(aralik: RaporAraligi) {
+  const iadeler = await prisma.iade.findMany({
+    where: tarihKosulu("iadeTarihi", aralik),
+    orderBy: { iadeTarihi: "desc" },
+    include: {
+      stokKalemi: { select: { id: true, marka: true, model: true, seriNo: true } },
+      musteri: { select: { adSoyad: true } },
+      magaza: { select: { ad: true } },
+      alanKullanici: { select: { adSoyad: true } },
+    },
+  });
+
+  return iadeler.map((i) => ({
+    id: i.id,
+    cihazId: i.stokKalemiId,
+    cihaz: `${i.stokKalemi.marka} ${i.stokKalemi.model}`,
+    seriNo: i.stokKalemi.seriNo,
+    magaza: i.magaza.ad,
+    musteri: i.musteri?.adSoyad ?? "—",
+    satisTarihi: i.satisTarihi,
+    iadeTarihi: i.iadeTarihi,
+    tutarKurus: i.satisFiyatiKurus,
+    // Satış iptal olduğu için bu kâr da raporlardan düştü.
+    dusenKarKurus: i.satisFiyatiKurus - i.alisFiyatiKurus,
+    neden: i.neden,
+    sonucDurum: i.sonucDurum,
+    alan: i.alanKullanici.adSoyad,
+  }));
 }
 
 /** Mağaza bazlı satış ve kâr. */
@@ -228,7 +302,7 @@ export async function aylikHareketRaporu(aySayisi = 12) {
 
   const [girisler, satislar] = await Promise.all([
     prisma.stokKalemi.findMany({
-      where: { girisTarihi: { gte: baslangic } },
+      where: { durum: { not: STOK_DURUM.IPTAL }, girisTarihi: { gte: baslangic } },
       select: { girisTarihi: true },
     }),
     prisma.stokKalemi.findMany({

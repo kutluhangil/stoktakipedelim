@@ -1,17 +1,21 @@
 import Link from "next/link";
 import { GIRDI_SINIFI } from "@/bilesenler/Alan";
 import { Kart } from "@/bilesenler/Kart";
+import { Rozet } from "@/bilesenler/Rozet";
 import { kurusuTLYazSembollu } from "@/lib/para";
 import { prisma } from "@/lib/prisma";
 import { aramaNormalize } from "@/lib/metin";
 import { STOK_DURUM } from "@/lib/sabitler";
 import { tarihYaz } from "@/lib/tarih";
-import { oturumGerekli } from "@/lib/yetki";
+import { adminMi, musteriDuzenleyebilirMi, oturumGerekli } from "@/lib/yetki";
+import { MusteriYonetimi } from "./MusteriYonetimi";
 
 export const metadata = { title: "Müşteriler — Stok Takip" };
 
 export default async function MusterilerSayfasi({ searchParams }: PageProps<"/musteriler">) {
-  await oturumGerekli();
+  const oturum = await oturumGerekli();
+  const duzenleyebilir = musteriDuzenleyebilirMi(oturum);
+  const silebilir = adminMi(oturum);
   const params = await searchParams;
   const ham = typeof params.ara === "string" ? params.ara.trim() : "";
   const rakamlar = ham.replace(/\D/g, "");
@@ -42,6 +46,30 @@ export default async function MusterilerSayfasi({ searchParams }: PageProps<"/mu
           satisFiyatiKurus: true,
         },
       },
+      // Bize sattığı ikinci el cihazlar.
+      sattiklari: {
+        orderBy: { alimTarihi: "desc" },
+        select: {
+          id: true,
+          stokKalemiId: true,
+          alimTarihi: true,
+          alisFiyatiKurus: true,
+          stokKalemi: { select: { marka: true, model: true } },
+        },
+      },
+      // İade edilen satış cihazdan silinir; müşterinin tarihçesinde kalması için
+      // iade kaydı ayrıca çekilir.
+      iadeler: {
+        orderBy: { iadeTarihi: "desc" },
+        select: {
+          id: true,
+          stokKalemiId: true,
+          iadeTarihi: true,
+          neden: true,
+          satisFiyatiKurus: true,
+          stokKalemi: { select: { marka: true, model: true } },
+        },
+      },
     },
   });
 
@@ -50,7 +78,11 @@ export default async function MusterilerSayfasi({ searchParams }: PageProps<"/mu
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Müşteriler</h1>
         <p className="mt-0.5 text-sm text-slate-500">
-          Müşteri kayıtları satış ekranından oluşur. Aynı telefon numarası tek kayda bağlanır.
+          Müşteri kayıtları satış ve ikinci el alım ekranlarından oluşur. Aynı telefon numarası
+          tek kayda bağlanır.
+          {duzenleyebilir
+            ? " KVKK kapsamında kayıt düzeltilebilir; bağlı işlemi olan kayıtta kimlik bilgileri silinir, ticari kayıt korunur."
+            : ""}
         </p>
       </div>
 
@@ -104,6 +136,14 @@ export default async function MusterilerSayfasi({ searchParams }: PageProps<"/mu
                       <span className="font-medium text-slate-800">
                         {kurusuTLYazSembollu(toplam)}
                       </span>
+                      {m.iadeler.length > 0 ? (
+                        <span className="ml-2 text-amber-700">{m.iadeler.length} iade</span>
+                      ) : null}
+                      {m.sattiklari.length > 0 ? (
+                        <span className="ml-2 text-violet-700">
+                          {m.sattiklari.length} ikinci el satışı
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   {m.adres ? <p className="mt-0.5 text-xs text-slate-500">{m.adres}</p> : null}
@@ -119,6 +159,39 @@ export default async function MusterilerSayfasi({ searchParams }: PageProps<"/mu
                             <span className="ml-1.5 text-slate-400">
                               {tarihYaz(c.satisTarihi)}
                             </span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {duzenleyebilir ? (
+                    <MusteriYonetimi
+                      musteri={{
+                        id: m.id,
+                        adSoyad: m.adSoyad,
+                        telefon: m.telefon,
+                        tcknVkn: m.tcknVkn,
+                        adres: m.adres,
+                        not: m.not,
+                      }}
+                      islemSayisi={
+                        m.satinAlinanlar.length + m.iadeler.length + m.sattiklari.length
+                      }
+                      silebilir={silebilir}
+                    />
+                  ) : null}
+                  {m.iadeler.length > 0 ? (
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                      {m.iadeler.map((i) => (
+                        <li key={i.id}>
+                          <Link
+                            href={"/cihazlar/" + i.stokKalemiId}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-900 transition hover:border-amber-400"
+                            title={i.neden}
+                          >
+                            <Rozet ton="sari">İade</Rozet>
+                            {i.stokKalemi.marka} {i.stokKalemi.model}
+                            <span className="text-amber-600">{tarihYaz(i.iadeTarihi)}</span>
                           </Link>
                         </li>
                       ))}

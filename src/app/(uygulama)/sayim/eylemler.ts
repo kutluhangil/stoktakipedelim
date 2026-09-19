@@ -5,8 +5,8 @@ import { redirect } from "next/navigation";
 import { logYaz } from "@/lib/log";
 import { kodNormalize } from "@/lib/metin";
 import { prisma } from "@/lib/prisma";
-import { LOG_ISLEM, SAYIM_DURUM, SAYIM_SONUC, STOK_DURUM } from "@/lib/sabitler";
-import { YetkiHatasi, magazaIslemiZorunlu, oturumZorunlu } from "@/lib/yetki";
+import { HAREKET_TIP, LOG_ISLEM, SAYIM_DURUM, SAYIM_SONUC, STOK_DURUM } from "@/lib/sabitler";
+import { YetkiHatasi, adminZorunlu, magazaIslemiZorunlu, oturumZorunlu } from "@/lib/yetki";
 
 export type SayimDurumu = { hata?: string; basari?: string };
 
@@ -46,6 +46,14 @@ export async function sayimBaslat(_onceki: SayimDurumu, form: FormData): Promise
         select: { id: true },
       });
 
+      // Gönderilmiş ama karşı mağazaca kabul edilmemiş cihazlar kayden hâlâ bu
+      // depoda. Sayılmaları beklenmez (fiziksel olarak yoklar) ama listede hiç
+      // görünmezlerse iki mağazanın da sayımından düşüyorlardı.
+      const sevkiyattakiler = await tx.stokKalemi.findMany({
+        where: { magazaId, durum: STOK_DURUM.TRANSFERDE },
+        select: { id: true },
+      });
+
       const olusan = await tx.sayim.create({
         data: {
           magazaId,
@@ -66,18 +74,32 @@ export async function sayimBaslat(_onceki: SayimDurumu, form: FormData): Promise
         });
       }
 
-      return olusan;
+      if (sevkiyattakiler.length > 0) {
+        await tx.sayimKalemi.createMany({
+          data: sevkiyattakiler.map((s) => ({
+            sayimId: olusan.id,
+            stokKalemiId: s.id,
+            beklenen: false,
+            sayildi: false,
+            sonuc: SAYIM_SONUC.SEVKIYATTA,
+          })),
+        });
+      }
+
+      return { olusan, sevkiyatAdedi: sevkiyattakiler.length };
     });
 
     await logYaz(oturum, {
       islem: LOG_ISLEM.SAYIM_BASLAT,
       hedefTip: "Sayim",
-      hedefId: sayim.id,
-      detay: `${magaza.ad} · ${sayim.beklenenAdet} cihaz beklenen`,
+      hedefId: sayim.olusan.id,
+      detay: `${magaza.ad} · ${sayim.olusan.beklenenAdet} cihaz beklenen${
+        sayim.sevkiyatAdedi > 0 ? `, ${sayim.sevkiyatAdedi} cihaz sevkiyatta` : ""
+      }`,
     });
 
     revalidatePath("/sayim");
-    yeniId = sayim.id;
+    yeniId = sayim.olusan.id;
   } catch (hata) {
     if (hata instanceof YetkiHatasi) return { hata: hata.message };
     console.error("Sayım başlatılamadı:", hata);
@@ -311,5 +333,84 @@ export async function sayimIptal(_onceki: SayimDurumu, form: FormData): Promise<
     if (hata instanceof YetkiHatasi) return { hata: hata.message };
     console.error("Sayım iptal edilemedi:", hata);
     return { hata: "Sayım iptal edilemedi. Lütfen tekrar deneyin." };
+  }
+}
+
+export type SayimFarkiDurumu = { hata?: string; basari?: string };
+
+/**
+ * Tamamlanmış sayımda eksik çıkan cihazları kayıp olarak işaretler (yalnız yönetici).
+ *
+ * Sayım "3 cihaz eksik" deyip bırakıyordu: eksik cihazlar stok adedinde ve stok
+ * değerinde durmaya devam ediyordu. Bu eylem her biri için SAYIM_FARK hareketi
+ * bırakır ve durumu KAYIP yapar; cihaz sonradan bulunursa "Satışa aç" ile döner.
+ */
+export async function sayimFarkiniIsle(
+  _onceki: SayimFarkiDurumu,
+  form: FormData,
+): Promise<SayimFarkiDurumu> {
+  try {
+    const oturum = await adminZorunlu();
+
+    const sayimId = Number(form.get("sayimId"));
+    if (!Number.isInteger(sayimId) || sayimId <= 0) return { hata: "Sayım bulunamadı." };
+
+    const sayim = await prisma.sayim.findUnique({
+      where: { id: sayimId },
+      include: { magaza: { select: { ad: true } } },
+    });
+    if (!sayim) return { hata: "Sayım bulunamadı." };
+    if (sayim.durum !== SAYIM_DURUM.TAMAMLANDI) {
+      return { hata: "Yalnız tamamlanmış sayımın farkı işlenebilir." };
+    }
+
+    // Sayımdan sonra satılmış ya da sevk edilmiş cihaza dokunulmaz.
+    const eksikler = await prisma.sayimKalemi.findMany({
+      where: {
+        sayimId,
+        beklenen: true,
+        sayildi: false,
+        stokKalemi: { is: { durum: STOK_DURUM.STOKTA, magazaId: sayim.magazaId } },
+      },
+      select: { stokKalemiId: true },
+    });
+
+    const idler = eksikler.map((e) => e.stokKalemiId).filter((id): id is number => id !== null);
+    if (idler.length === 0) {
+      return { hata: "İşlenecek eksik cihaz yok; hepsi bulunmuş veya daha önce işlenmiş." };
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.stokKalemi.updateMany({
+        where: { id: { in: idler } },
+        data: { durum: STOK_DURUM.KAYIP },
+      });
+      await tx.stokHareketi.createMany({
+        data: idler.map((id) => ({
+          stokKalemiId: id,
+          tip: HAREKET_TIP.SAYIM_FARK,
+          kaynakMagazaId: sayim.magazaId,
+          kullaniciId: oturum.kullaniciId,
+          aciklama: `#${sayimId} sayımında bulunamadı, kayıp işlendi`,
+        })),
+      });
+    });
+
+    await logYaz(oturum, {
+      islem: LOG_ISLEM.SAYIM_FARK,
+      hedefTip: "Sayim",
+      hedefId: sayimId,
+      detay: `${sayim.magaza.ad} · ${idler.length} cihaz kayıp işlendi`,
+    });
+
+    revalidatePath(`/sayim/${sayimId}`);
+    revalidatePath("/cihazlar");
+    revalidatePath("/panel");
+    revalidatePath("/rapor");
+    return { basari: `${idler.length} cihaz kayıp olarak işlendi; stok değerinden düştü.` };
+  } catch (hata) {
+    if (hata instanceof YetkiHatasi) return { hata: hata.message };
+    console.error("Sayım farkı işlenemedi:", hata);
+    return { hata: "Sayım farkı işlenemedi. Lütfen tekrar deneyin." };
   }
 }

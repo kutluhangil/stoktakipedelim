@@ -2,7 +2,7 @@ import { cikisYap } from "@/app/giris/eylemler";
 import { UstMenu, type MenuOgesi } from "@/bilesenler/UstMenu";
 import { prisma } from "@/lib/prisma";
 import { ROL_ETIKET } from "@/lib/sabitler";
-import { adminMi } from "@/lib/yetki";
+import { adminMi, ikinciElAlabilirMi } from "@/lib/yetki";
 import { oturumGerekli } from "@/lib/yetki";
 
 const TEMEL_MENU: MenuOgesi[] = [
@@ -19,10 +19,14 @@ export default async function UygulamaDuzeni({ children }: LayoutProps<"/">) {
   const oturum = await oturumGerekli();
 
   const ayar = await prisma.ayar.findUnique({ where: { anahtar: "firma_adi" } });
-  // Alış faturaları ve ayarlar yalnızca yöneticinin menüsünde.
-  const menu = adminMi(oturum)
-    ? [...TEMEL_MENU, { etiket: "Faturalar", yol: "/faturalar" }, { etiket: "Ayarlar", yol: "/ayarlar" }]
-    : TEMEL_MENU;
+  // İkinci el alım sorumluda da var; alış faturaları ve ayarlar yalnız yöneticide.
+  const menu = [
+    ...TEMEL_MENU,
+    ...(ikinciElAlabilirMi(oturum) ? [{ etiket: "İkinci El", yol: "/alim" }] : []),
+    ...(adminMi(oturum)
+      ? [{ etiket: "Faturalar", yol: "/faturalar" }, { etiket: "Ayarlar", yol: "/ayarlar" }]
+      : []),
+  ];
 
   return (
     <div className="flex min-h-dvh flex-col">

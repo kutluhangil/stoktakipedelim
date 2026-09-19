@@ -1,10 +1,12 @@
+import { guvenliDonusYolu } from "@/lib/yonlendirme";
 import { GirisFormu } from "./GirisFormu";
 
 export const metadata = { title: "Giriş — Stok Takip" };
 
 export default async function GirisSayfasi({ searchParams }: PageProps<"/giris">) {
   const { devam } = await searchParams;
-  const hedef = typeof devam === "string" ? devam : "";
+  // Dış adres forma hiç girmesin; girişten dönüş yolu her zaman site içi.
+  const hedef = typeof devam === "string" ? guvenliDonusYolu(devam, "") : "";
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-slate-100 px-4 py-10">

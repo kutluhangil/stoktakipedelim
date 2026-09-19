@@ -6,6 +6,8 @@ import { TransferRozeti } from "@/bilesenler/TransferRozeti";
 import { kurusuTLYaz, kurusuTLYazSembollu } from "@/lib/para";
 import {
   girisCikisRaporu,
+  iadeRaporu,
+  ikinciElRaporu,
   kategoriStokRaporu,
   kullaniciSatisRaporu,
   magazaSatisRaporu,
@@ -15,7 +17,13 @@ import {
   vadeRaporu,
   type RaporAraligi,
 } from "@/lib/raporlar";
-import { VADE_ETIKET } from "@/lib/sabitler";
+import {
+  ODEME_TIPI_ETIKET,
+  STOK_DURUM_ETIKET,
+  VADE_ETIKET,
+  type OdemeTipi,
+  type StokDurum,
+} from "@/lib/sabitler";
 import { inputTarih, tarihYaz } from "@/lib/tarih";
 import { oturumGerekli } from "@/lib/yetki";
 
@@ -80,7 +88,18 @@ export default async function RaporSayfasi({ searchParams }: PageProps<"/rapor">
   };
   const bugun = new Date();
 
-  const [stok, kategori, vade, girisCikis, magazaSatis, kullaniciSatis, transfer, sayim] =
+  const [
+    stok,
+    kategori,
+    vade,
+    girisCikis,
+    magazaSatis,
+    kullaniciSatis,
+    transfer,
+    sayim,
+    iade,
+    ikinciEl,
+  ] =
     await Promise.all([
       magazaStokRaporu(),
       kategoriStokRaporu(),
@@ -90,11 +109,15 @@ export default async function RaporSayfasi({ searchParams }: PageProps<"/rapor">
       kullaniciSatisRaporu(aralik),
       transferRaporu(aralik),
       sayimRaporu(),
+      iadeRaporu(aralik),
+      ikinciElRaporu(aralik),
     ]);
 
   const toplamAdet = stok.reduce((t, s) => t + s.adet, 0);
   const toplamDeger = stok.reduce((t, s) => t + s.degerKurus, 0);
   const vadesiGecen = vade.filter((v) => v.gecmisMi);
+  const iadeTutari = iade.reduce((t, i) => t + i.tutarKurus, 0);
+  const ikinciElTutari = ikinciEl.reduce((t, a) => t + a.tutarKurus, 0);
   const vadeBorcu = vade.reduce((t, v) => t + v.tutarKurus, 0);
 
   const excelSorgu = new URLSearchParams();
@@ -161,6 +184,17 @@ export default async function RaporSayfasi({ searchParams }: PageProps<"/rapor">
           deger={kurusuTLYazSembollu(girisCikis.satisTutari)}
           altBilgi={`${girisCikis.satisAdedi} cihaz`}
           vurgu="basari"
+        />
+        <SayiKarti
+          etiket="İkinci El Alım"
+          deger={kurusuTLYazSembollu(ikinciElTutari)}
+          altBilgi={ikinciEl.length + " cihaz"}
+        />
+        <SayiKarti
+          etiket="Aralıktaki İade"
+          deger={kurusuTLYazSembollu(iadeTutari)}
+          altBilgi={iade.length + " satış geri alındı"}
+          vurgu={iade.length > 0 ? "uyari" : "normal"}
         />
         <SayiKarti
           etiket="Aralıktaki Kâr"
@@ -298,6 +332,78 @@ export default async function RaporSayfasi({ searchParams }: PageProps<"/rapor">
           />
         </Kart>
       </div>
+
+      <Kart baslik="İkinci El Alımlar">
+        <p className="mb-3 text-xs text-slate-500">
+          Tezgâhtan alınan cihazların faturası yoktur; vade raporunda görünmezler. Aşağıdaki
+          tutar seçili aralıkta kasadan çıkan ikinci el alım bedelidir.
+        </p>
+        <Tablo
+          basliklar={[
+            { ad: "Cihaz" },
+            { ad: "Seri No" },
+            { ad: "Depo" },
+            { ad: "Satan" },
+            { ad: "Tarih" },
+            { ad: "Tutar", sagaYasli: true },
+            { ad: "Ödeme" },
+            { ad: "Durum" },
+            { ad: "Alan" },
+          ]}
+          satirlar={ikinciEl.map((a) => [
+            <Link key="c" href={"/cihazlar/" + a.cihazId} className="text-blue-600 hover:underline">
+              {a.cihaz}
+            </Link>,
+            a.seriNo ?? "—",
+            a.magaza,
+            a.satan,
+            tarihYaz(a.alimTarihi),
+            kurusuTLYaz(a.tutarKurus),
+            ODEME_TIPI_ETIKET[a.odemeTipi as OdemeTipi] ?? a.odemeTipi,
+            <Rozet key="d" ton="mor">
+              {STOK_DURUM_ETIKET[a.durum as StokDurum] ?? a.durum}
+            </Rozet>,
+            a.alan,
+          ])}
+          bos="Seçili aralıkta ikinci el alım yok."
+        />
+      </Kart>
+
+      <Kart baslik="Alınan İadeler">
+        <p className="mb-3 text-xs text-slate-500">
+          İade edilen satış ciro, kâr ve satış raporlarından tamamen düşer; aşağıdaki tutar
+          bu raporlardan çıkan satışların toplamıdır.
+        </p>
+        <Tablo
+          basliklar={[
+            { ad: "Cihaz" },
+            { ad: "Mağaza" },
+            { ad: "Müşteri" },
+            { ad: "Satış" },
+            { ad: "İade" },
+            { ad: "Tutar", sagaYasli: true },
+            { ad: "Düşen kâr", sagaYasli: true },
+            { ad: "Neden" },
+            { ad: "Sonuç" },
+          ]}
+          satirlar={iade.map((i) => [
+            <Link key="c" href={"/cihazlar/" + i.cihazId} className="text-blue-600 hover:underline">
+              {i.cihaz}
+            </Link>,
+            i.magaza,
+            i.musteri,
+            tarihYaz(i.satisTarihi),
+            tarihYaz(i.iadeTarihi),
+            kurusuTLYaz(i.tutarKurus),
+            kurusuTLYaz(i.dusenKarKurus),
+            i.neden,
+            <Rozet key="s" ton="sari">
+              {STOK_DURUM_ETIKET[i.sonucDurum as StokDurum] ?? i.sonucDurum}
+            </Rozet>,
+          ])}
+          bos="Seçili aralıkta iade alınmadı."
+        />
+      </Kart>
 
       <Kart baslik="Tamamlanan Sayımlar">
         <Tablo

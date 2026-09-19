@@ -4,7 +4,9 @@ import { ROLLER } from "./sabitler";
 import {
   adminMi,
   ayarlariYonetebilirMi,
+  ikinciElAlabilirMi,
   magazadaIslemYapabilirMi,
+  musteriDuzenleyebilirMi,
   stokEkleyebilirMi,
   stokSilebilirMi,
 } from "./yetkiKurallari";
@@ -59,4 +61,19 @@ test("mağazaya bağlı olmayan personel hiçbir mağazada işlem yapamaz", () =
   // magazaId null olduğunda null === null tuzağına düşülmemeli.
   assert.equal(magazadaIslemYapabilirMi(bagsizPersonel, 1), false);
   assert.equal(magazadaIslemYapabilirMi(bagsizPersonel, 2), false);
+});
+
+test("ikinci el alımı yönetici ve mağaza sorumlusunda", () => {
+  assert.equal(ikinciElAlabilirMi({ rol: ROLLER.ADMIN, magazaId: null }), true);
+  assert.equal(ikinciElAlabilirMi({ rol: ROLLER.MAGAZA_SORUMLUSU, magazaId: 1 }), true);
+});
+
+test("mağaza personeli ikinci el alamaz", () => {
+  assert.equal(ikinciElAlabilirMi({ rol: ROLLER.MAGAZA_PERSONELI, magazaId: 1 }), false);
+});
+
+test("müşteri düzeltme yönetici ve mağaza sorumlusunda", () => {
+  assert.equal(musteriDuzenleyebilirMi({ rol: ROLLER.ADMIN, magazaId: null }), true);
+  assert.equal(musteriDuzenleyebilirMi({ rol: ROLLER.MAGAZA_SORUMLUSU, magazaId: 1 }), true);
+  assert.equal(musteriDuzenleyebilirMi({ rol: ROLLER.MAGAZA_PERSONELI, magazaId: 1 }), false);
 });

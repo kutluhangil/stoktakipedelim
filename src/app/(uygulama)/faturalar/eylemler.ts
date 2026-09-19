@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { logYaz } from "@/lib/log";
 import { aramaMetniUret, kodNormalize } from "@/lib/metin";
 import { HAREKET_TIP, LOG_ISLEM, STOK_DURUM } from "@/lib/sabitler";
+import { gunBasi } from "@/lib/tarih";
 import { vadeTarihiHesapla } from "@/lib/vade";
 import { YetkiHatasi, adminZorunlu } from "@/lib/yetki";
 import { faturaSemasi } from "./dogrulama";
@@ -106,6 +107,10 @@ export async function faturaKaydet(
       select: { ad: true },
     });
 
+    // Fatura tarihi form alanından UTC gece yarısı olarak geliyor; yerel gün
+    // başına çekilmezse aynı gün yapılan düzeltmeler tarihçede girişten önce
+    // görünebiliyordu.
+    const girisAni = gunBasi(veri.faturaTarihi);
     const vadeTarihi = vadeTarihiHesapla(veri.faturaTarihi, veri.vadeGun);
 
     const fatura = await prisma.$transaction(async (tx) => {
@@ -139,7 +144,7 @@ export async function faturaKaydet(
             alisFaturasiId: olusan.id,
             tedarikciId: veri.tedarikciId,
             alisFiyatiKurus: satir.alisFiyatiKurus,
-            girisTarihi: veri.faturaTarihi,
+            girisTarihi: girisAni,
             magazaId: veri.magazaId,
             durum: STOK_DURUM.STOKTA,
             not: satir.not,
@@ -163,7 +168,7 @@ export async function faturaKaydet(
             hedefMagazaId: veri.magazaId,
             kullaniciId: oturum.kullaniciId,
             aciklama: `${veri.faturaNo} numaralı alış faturası`,
-            tarih: veri.faturaTarihi,
+            tarih: girisAni,
           },
         });
       }

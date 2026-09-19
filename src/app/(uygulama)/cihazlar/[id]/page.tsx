@@ -9,15 +9,22 @@ import {
   HAREKET_TIP,
   HAREKET_TIP_ETIKET,
   ODEME_TIPI_ETIKET,
+  STOGA_DONEBILEN,
+  STOK_DURUM,
+  STOK_DURUM_ETIKET,
   VADE_ETIKET,
   type HareketTip,
   type OdemeTipi,
+  type StokDurum,
 } from "@/lib/sabitler";
 import { beklemeGunu, karKurus } from "@/lib/sutunlar";
-import { tarihSaatYaz, tarihYaz } from "@/lib/tarih";
+import { inputTarih, tarihSaatYaz, tarihYaz } from "@/lib/tarih";
 import { vadeDurumu } from "@/lib/vade";
-import { oturumGerekli } from "@/lib/yetki";
+import { adminMi, magazadaIslemYapabilirMi, oturumGerekli } from "@/lib/yetki";
 import { CIHAZ_ICERIK } from "@/lib/cihazFiltre";
+import { IadeFormu } from "./IadeFormu";
+import { ArizaFormu, StogaAlFormu } from "./DurumYonetimi";
+import { YonetimDugmeleri } from "./YonetimDugmeleri";
 
 export const metadata = { title: "Cihaz Detayı — Stok Takip" };
 
@@ -42,12 +49,12 @@ const HAREKET_NOKTASI: Record<HareketTip, string> = {
 };
 
 export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar/[id]">) {
-  await oturumGerekli();
+  const oturum = await oturumGerekli();
   const { id } = await params;
   const cihazId = Number(id);
   if (!Number.isInteger(cihazId)) notFound();
 
-  const [cihaz, hareketler] = await Promise.all([
+  const [cihaz, hareketler, ikinciEl, iadeler] = await Promise.all([
     prisma.stokKalemi.findUnique({ where: { id: cihazId }, include: CIHAZ_ICERIK }),
     prisma.stokHareketi.findMany({
       where: { stokKalemiId: cihazId },
@@ -59,6 +66,22 @@ export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar
         transfer: { select: { id: true, transferNo: true, durum: true } },
       },
     }),
+    prisma.ikinciElAlim.findUnique({
+      where: { stokKalemiId: cihazId },
+      include: {
+        musteri: { select: { id: true, adSoyad: true, telefon: true } },
+        alanKullanici: { select: { adSoyad: true } },
+      },
+    }),
+    prisma.iade.findMany({
+      where: { stokKalemiId: cihazId },
+      orderBy: { iadeTarihi: "desc" },
+      include: {
+        musteri: { select: { id: true, adSoyad: true, telefon: true } },
+        alanKullanici: { select: { adSoyad: true } },
+        satanKullanici: { select: { adSoyad: true } },
+      },
+    }),
   ]);
 
   if (!cihaz) notFound();
@@ -66,6 +89,14 @@ export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar
   const bugun = new Date();
   const vade = vadeDurumu(cihaz.alisFaturasi, bugun);
   const kar = karKurus(cihaz);
+  // İade satışı geri alan bir işlemdir; yetkisi satışla aynı (kendi mağazan).
+  const iadeAlabilir =
+    cihaz.durum === STOK_DURUM.SATILDI && magazadaIslemYapabilirMi(oturum, cihaz.magazaId);
+  const magazadaYetkili = magazadaIslemYapabilirMi(oturum, cihaz.magazaId);
+  // İade / arıza / kayıp kontrolü biten cihazın satışa dönüş yolu.
+  const stogaAlinabilir =
+    (STOGA_DONEBILEN as readonly string[]).includes(cihaz.durum) && magazadaYetkili;
+  const arizayaAlinabilir = cihaz.durum === STOK_DURUM.STOKTA && magazadaYetkili;
 
   return (
     <div className="space-y-5">
@@ -90,12 +121,23 @@ export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar
             {cihaz.magaza.ad}
           </p>
         </div>
-        <Link
-          href="/cihazlar"
-          className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-        >
-          ← Cihazlar
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Kayıt düzeltme ve iptal yalnızca yöneticide. */}
+          {adminMi(oturum) && cihaz.durum !== STOK_DURUM.IPTAL ? (
+            <Link
+              href={`/cihazlar/${cihaz.id}/duzenle`}
+              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Düzenle
+            </Link>
+          ) : null}
+          <Link
+            href="/cihazlar"
+            className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            ← Cihazlar
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
@@ -134,6 +176,27 @@ export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar
           <Kart baslik="Alış Bilgileri">
             <dl>
               <Satir etiket="Giriş Tarihi">{tarihYaz(cihaz.girisTarihi)}</Satir>
+              <Satir etiket="Kaynak">
+                {ikinciEl ? (
+                  <Rozet ton="mor">İkinci el alım</Rozet>
+                ) : cihaz.alisFaturasi ? (
+                  "Alış faturası"
+                ) : (
+                  <span className="text-slate-300">—</span>
+                )}
+              </Satir>
+              {ikinciEl ? (
+                <>
+                  <Satir etiket="Satan Kişi">{ikinciEl.musteri.adSoyad}</Satir>
+                  {ikinciEl.musteri.telefon ? (
+                    <Satir etiket="Satan Telefonu">{ikinciEl.musteri.telefon}</Satir>
+                  ) : null}
+                  <Satir etiket="Ödeme Tipi">
+                    {ODEME_TIPI_ETIKET[ikinciEl.odemeTipi as OdemeTipi] ?? ikinciEl.odemeTipi}
+                  </Satir>
+                  <Satir etiket="Alımı Yapan">{ikinciEl.alanKullanici.adSoyad}</Satir>
+                </>
+              ) : null}
               <Satir etiket="Tedarikçi">{cihaz.tedarikci?.ad ?? "—"}</Satir>
               <Satir etiket="Alış Fiyatı">{kurusuTLYazSembollu(cihaz.alisFiyatiKurus)}</Satir>
               <Satir etiket="Fatura">
@@ -177,6 +240,12 @@ export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar
               ) : null}
             </dl>
           </Kart>
+
+          {adminMi(oturum) ? (
+            <Kart baslik="Kayıt Yönetimi">
+              <YonetimDugmeleri cihazId={cihaz.id} durum={cihaz.durum} />
+            </Kart>
+          ) : null}
         </div>
 
         <div className="space-y-5 lg:col-span-2">
@@ -205,6 +274,52 @@ export default async function CihazDetaySayfasi({ params }: PageProps<"/cihazlar
                   <Satir etiket="Müşteri Telefonu">{cihaz.musteri.telefon}</Satir>
                 ) : null}
               </dl>
+            </Kart>
+          ) : null}
+
+          {iadeAlabilir ? (
+            <Kart baslik="İade">
+              <IadeFormu cihazId={cihaz.id} bugun={inputTarih(bugun)} />
+            </Kart>
+          ) : null}
+
+          {stogaAlinabilir ? (
+            <Kart baslik="Satışa Açma">
+              <StogaAlFormu cihazId={cihaz.id} />
+            </Kart>
+          ) : null}
+
+          {arizayaAlinabilir ? (
+            <Kart baslik="Arıza">
+              <ArizaFormu cihazId={cihaz.id} />
+            </Kart>
+          ) : null}
+
+          {iadeler.length > 0 ? (
+            <Kart baslik="İade Geçmişi">
+              <ul className="divide-y divide-slate-100">
+                {iadeler.map((i) => (
+                  <li key={i.id} className="py-3 first:pt-0 last:pb-0">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="text-sm font-medium text-slate-800">
+                        {i.musteri?.adSoyad ?? "Müşteri kaydı silinmiş"}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {tarihYaz(i.iadeTarihi)} ·{" "}
+                        {STOK_DURUM_ETIKET[i.sonucDurum as StokDurum] ?? i.sonucDurum}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-sm text-slate-600">
+                      {tarihYaz(i.satisTarihi)} tarihli {kurusuTLYazSembollu(i.satisFiyatiKurus)}{" "}
+                      satış geri alındı
+                      {i.satanKullanici ? " · satan: " + i.satanKullanici.adSoyad : ""}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {i.neden} · iadeyi alan: {i.alanKullanici.adSoyad}
+                    </p>
+                  </li>
+                ))}
+              </ul>
             </Kart>
           ) : null}
 

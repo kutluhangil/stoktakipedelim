@@ -1,6 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { aramaNormalize } from "./metin";
+import { STOK_DURUM } from "./sabitler";
 import { gunSonu } from "./tarih";
 
 export type CihazFiltresi = {
@@ -69,7 +70,10 @@ export function filtredenWhere(
 ): Prisma.StokKalemiWhereInput {
   const kosullar: Prisma.StokKalemiWhereInput[] = [];
 
+  // İptal edilmiş kayıtlar yalnızca durum filtresi açıkça "İptal" seçildiğinde
+  // listelenir; aksi hâlde adede ve stok değerine karışmazlar.
   if (filtre.durum) kosullar.push({ durum: filtre.durum });
+  else kosullar.push({ durum: { not: STOK_DURUM.IPTAL } });
   if (filtre.magazaId) kosullar.push({ magazaId: filtre.magazaId });
   if (filtre.kategoriId) kosullar.push({ kategoriId: filtre.kategoriId });
   if (filtre.altKategoriId) kosullar.push({ altKategoriId: filtre.altKategoriId });

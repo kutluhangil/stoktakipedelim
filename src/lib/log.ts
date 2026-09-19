@@ -11,7 +11,7 @@ type LogGirdisi = {
   detay?: string;
 };
 
-async function istemciIp(): Promise<string | undefined> {
+export async function istemciIp(): Promise<string | undefined> {
   try {
     const basliklar = await headers();
     return (

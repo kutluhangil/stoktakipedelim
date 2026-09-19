@@ -27,6 +27,13 @@ const ISLEM_ETIKET: Record<string, string> = {
   EXCEL_AKTAR: "Excel'e aktardı",
   AYAR_DEGISTIR: "Ayar değiştirdi",
   YEDEK_AL: "Yedek aldı",
+  SATIS_IADE: "Satış iadesi aldı",
+  SIFRE_DEGISTIR: "Şifresini değiştirdi",
+  OTURUM_IPTAL: "Oturumları kapattı",
+  GIRIS_KILIT: "Giriş kilitlendi",
+  MUSTERI_DUZENLE: "Müşteri kaydını düzeltti",
+  MUSTERI_SIL: "Müşteri kaydını sildi",
+  SAYIM_FARK: "Sayım farkını işledi",
 };
 
 const ISLEM_TONU: Record<string, RozetTonu> = {
@@ -42,6 +49,13 @@ const ISLEM_TONU: Record<string, RozetTonu> = {
   EXCEL_AKTAR: "nötr",
   AYAR_DEGISTIR: "mavi",
   STOK_SIL: "kirmizi",
+  SATIS_IADE: "sari",
+  SIFRE_DEGISTIR: "mavi",
+  OTURUM_IPTAL: "kirmizi",
+  GIRIS_KILIT: "kirmizi",
+  MUSTERI_DUZENLE: "mavi",
+  MUSTERI_SIL: "kirmizi",
+  SAYIM_FARK: "sari",
 };
 
 function tarihCoz(deger: string | string[] | undefined): Date | null {

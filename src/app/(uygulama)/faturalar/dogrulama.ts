@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { VADE_SECENEKLERI } from "@/lib/sabitler";
+import { VADE_EN_FAZLA_GUN } from "@/lib/sabitler";
 
 const kirusTutar = z
   .number()
@@ -27,8 +27,9 @@ export const faturaSemasi = z.object({
   faturaTarihi: z.coerce.date({ message: "Fatura tarihi geçersiz." }),
   vadeGun: z
     .number()
-    .int()
-    .refine((v) => (VADE_SECENEKLERI as readonly number[]).includes(v), "Vade seçeneği geçersiz."),
+    .int("Vade gün sayısı tam sayı olmalı.")
+    .min(0, "Vade negatif olamaz.")
+    .max(VADE_EN_FAZLA_GUN, `Vade en fazla ${VADE_EN_FAZLA_GUN} gün olabilir.`),
   not: z.string().trim().max(500).nullable(),
   satirlar: z.array(faturaSatiriSemasi).min(1, "En az bir cihaz satırı ekleyin."),
 });

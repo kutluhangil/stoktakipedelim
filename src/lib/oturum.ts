@@ -13,6 +13,12 @@ export type OturumBilgisi = {
   rol: Rol;
   magazaId: number | null;
   magazaAdi: string | null;
+  /**
+   * Jetonun üretildiği andaki Kullanici.oturumSurumu. Her istekte veritabanıyla
+   * karşılaştırılır (src/lib/yetki.ts); şifre değişimi veya oturum iptali
+   * sürümü artırdığında eski jetonlar anında geçersizleşir.
+   */
+  oturumSurumu: number;
 };
 
 function gizliAnahtar(): Uint8Array {
@@ -37,6 +43,8 @@ export async function oturumJetonunuCoz(jeton: string): Promise<OturumBilgisi | 
   try {
     const { payload } = await jwtVerify(jeton, gizliAnahtar());
     if (typeof payload.kullaniciId !== "number") return null;
+    // Sürümsüz jeton bu alan eklenmeden önce üretilmiştir; geçersiz sayılır.
+    if (typeof payload.oturumSurumu !== "number") return null;
     return {
       kullaniciId: payload.kullaniciId,
       kullaniciAdi: String(payload.kullaniciAdi ?? ""),
@@ -44,6 +52,7 @@ export async function oturumJetonunuCoz(jeton: string): Promise<OturumBilgisi | 
       rol: payload.rol as Rol,
       magazaId: (payload.magazaId as number | null) ?? null,
       magazaAdi: (payload.magazaAdi as string | null) ?? null,
+      oturumSurumu: payload.oturumSurumu,
     };
   } catch {
     return null;

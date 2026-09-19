@@ -3,6 +3,8 @@ import { logYaz } from "@/lib/log";
 import { oturumuOku } from "@/lib/oturum";
 import {
   girisCikisRaporu,
+  iadeRaporu,
+  ikinciElRaporu,
   kategoriStokRaporu,
   kullaniciSatisRaporu,
   magazaSatisRaporu,
@@ -12,7 +14,16 @@ import {
   vadeRaporu,
   type RaporAraligi,
 } from "@/lib/raporlar";
-import { LOG_ISLEM, TRANSFER_DURUM_ETIKET, VADE_ETIKET, type TransferDurum } from "@/lib/sabitler";
+import {
+  LOG_ISLEM,
+  ODEME_TIPI_ETIKET,
+  STOK_DURUM_ETIKET,
+  TRANSFER_DURUM_ETIKET,
+  VADE_ETIKET,
+  type OdemeTipi,
+  type StokDurum,
+  type TransferDurum,
+} from "@/lib/sabitler";
 import { tarihYaz } from "@/lib/tarih";
 
 function tarihCoz(deger: string | null): Date | null {
@@ -33,7 +44,18 @@ export async function GET(istek: Request) {
   };
   const bugun = new Date();
 
-  const [stok, kategori, vade, girisCikis, magazaSatis, kullaniciSatis, transfer, sayim] =
+  const [
+    stok,
+    kategori,
+    vade,
+    girisCikis,
+    magazaSatis,
+    kullaniciSatis,
+    transfer,
+    sayim,
+    iade,
+    ikinciEl,
+  ] =
     await Promise.all([
       magazaStokRaporu(),
       kategoriStokRaporu(),
@@ -43,6 +65,8 @@ export async function GET(istek: Request) {
       kullaniciSatisRaporu(aralik),
       transferRaporu(aralik),
       sayimRaporu(),
+      iadeRaporu(aralik),
+      ikinciElRaporu(aralik),
     ]);
 
   const aralikMetni =
@@ -72,6 +96,16 @@ export async function GET(istek: Request) {
         ["Aralıktaki satış", girisCikis.satisAdedi, kurusuExcelSayisi(girisCikis.satisTutari)],
         ["Satılanların maliyeti", girisCikis.satisAdedi, kurusuExcelSayisi(girisCikis.satilanMaliyet)],
         ["Kâr", "", kurusuExcelSayisi(girisCikis.karKurus)],
+        [
+          "Aralıktaki ikinci el alım",
+          ikinciEl.length,
+          kurusuExcelSayisi(ikinciEl.reduce((t, a) => t + a.tutarKurus, 0)),
+        ],
+        [
+          "Aralıktaki iade",
+          iade.length,
+          kurusuExcelSayisi(iade.reduce((t, i) => t + i.tutarKurus, 0)),
+        ],
         ["Ödenmemiş vadeli fatura", vade.length, kurusuExcelSayisi(vade.reduce((t, v) => t + v.tutarKurus, 0))],
         ["Vadesi geçmiş fatura", vade.filter((v) => v.gecmisMi).length, ""],
       ],
@@ -163,6 +197,62 @@ export async function GET(istek: Request) {
       satirlar: transfer.map((t) => [
         TRANSFER_DURUM_ETIKET[t.durum as TransferDurum] ?? t.durum,
         t.adet,
+      ]),
+    },
+    {
+      ad: "İkinci El Alımlar",
+      sutunlar: [
+        { baslik: "Cihaz", genislik: 26 },
+        { baslik: "Seri No", genislik: 20 },
+        { baslik: "Depo", genislik: 22 },
+        { baslik: "Satan", genislik: 24 },
+        { baslik: "Telefon", genislik: 18 },
+        { baslik: "Tarih", genislik: 14 },
+        { baslik: "Tutar (TL)", genislik: 18, sayisal: true },
+        { baslik: "Ödeme", genislik: 16 },
+        { baslik: "Durum", genislik: 14 },
+        { baslik: "Alan", genislik: 24 },
+      ],
+      satirlar: ikinciEl.map((a) => [
+        a.cihaz,
+        a.seriNo ?? "",
+        a.magaza,
+        a.satan,
+        a.satanTelefon ?? "",
+        tarihYaz(a.alimTarihi),
+        kurusuExcelSayisi(a.tutarKurus),
+        ODEME_TIPI_ETIKET[a.odemeTipi as OdemeTipi] ?? a.odemeTipi,
+        STOK_DURUM_ETIKET[a.durum as StokDurum] ?? a.durum,
+        a.alan,
+      ]),
+    },
+    {
+      ad: "İadeler",
+      sutunlar: [
+        { baslik: "Cihaz", genislik: 26 },
+        { baslik: "Seri No", genislik: 20 },
+        { baslik: "Mağaza", genislik: 22 },
+        { baslik: "Müşteri", genislik: 24 },
+        { baslik: "Satış Tarihi", genislik: 14 },
+        { baslik: "İade Tarihi", genislik: 14 },
+        { baslik: "Tutar (TL)", genislik: 18, sayisal: true },
+        { baslik: "Düşen Kâr (TL)", genislik: 18, sayisal: true },
+        { baslik: "Neden", genislik: 34 },
+        { baslik: "Sonuç", genislik: 14 },
+        { baslik: "İadeyi Alan", genislik: 24 },
+      ],
+      satirlar: iade.map((i) => [
+        i.cihaz,
+        i.seriNo ?? "",
+        i.magaza,
+        i.musteri,
+        tarihYaz(i.satisTarihi),
+        tarihYaz(i.iadeTarihi),
+        kurusuExcelSayisi(i.tutarKurus),
+        kurusuExcelSayisi(i.dusenKarKurus),
+        i.neden,
+        STOK_DURUM_ETIKET[i.sonucDurum as StokDurum] ?? i.sonucDurum,
+        i.alan,
       ]),
     },
     {

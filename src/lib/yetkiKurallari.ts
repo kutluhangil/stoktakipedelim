@@ -24,6 +24,27 @@ export function stokSilebilirMi(oturum: YetkiSahibi): boolean {
   return adminMi(oturum);
 }
 
+/**
+ * Tezgâhtan ikinci el cihaz alımı: yönetici ve mağaza sorumlusu.
+ *
+ * Fatura girişinden ayrı tutulur — alım tezgâhta olan günlük bir iş, sorumlunun
+ * beklemesi işi durdurur. Yine de kasadan para çıktığı için personele açılmaz.
+ */
+export function ikinciElAlabilirMi(oturum: YetkiSahibi): boolean {
+  return adminMi(oturum) || oturum.rol === ROLLER.MAGAZA_SORUMLUSU;
+}
+
+/**
+ * Müşteri künyesini düzeltme: yönetici ve mağaza sorumlusu.
+ *
+ * Yanlış girilmiş telefon/TCKN tezgâhta fark edilir; düzeltmeyi yöneticiye
+ * bırakmak KVKK'daki düzeltme hakkını pratikte işlemez kılar. Silme/anonimleştirme
+ * geri alınamaz olduğu için yöneticide kalır.
+ */
+export function musteriDuzenleyebilirMi(oturum: YetkiSahibi): boolean {
+  return adminMi(oturum) || oturum.rol === ROLLER.MAGAZA_SORUMLUSU;
+}
+
 /** Ayarlar, kullanıcı, kategori ve mağaza yönetimi yalnızca yöneticide. */
 export function ayarlariYonetebilirMi(oturum: YetkiSahibi): boolean {
   return adminMi(oturum);

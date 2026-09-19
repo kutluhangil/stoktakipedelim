@@ -79,6 +79,7 @@ node betikler/faz3-dogrula.mjs      # çift onaylı sevkiyat, kısmi kabul, red,
 node betikler/faz4-dogrula.mjs      # mağaza bazlı sayım, eksik/fazla tespiti, Excel raporu
 node betikler/faz5-dogrula.mjs      # sütun seçici, Excel çıktıları, raporlar, loglar, kullanıcılar
 node betikler/faz6-dogrula.mjs      # yedekleme ekranı, yetki ve cron ucu
+node betikler/cihaz-duzenle-dogrula.mjs  # kayıt düzeltme, seri no çakışması, iptal/geri al
 ```
 
 `@playwright/test` kurulu olmalıdır. Tarayıcı ikilisi farklı bir yerdeyse
